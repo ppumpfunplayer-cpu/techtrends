@@ -1,11 +1,18 @@
 import sqlite3
 
-from flask import Flask, jsonify, json, render_template, request, url_for, redirect, flash
+import logging
+from flask import Flask, jsonify, json , render_template, request, url_for, redirect, flash
 from werkzeug.exceptions import abort
+
+db_connection_count = 0
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # Function to get a database connection.
 # This function connects to database with the name `database.db`
 def get_db_connection():
+    global db_connection_count
+    db_connection_count += 1
     connection = sqlite3.connect('database.db')
     connection.row_factory = sqlite3.Row
     return connection
@@ -16,6 +23,10 @@ def get_post(post_id):
     post = connection.execute('SELECT * FROM posts WHERE id = ?',
                         (post_id,)).fetchone()
     connection.close()
+    if post is None:
+        logger.error("Article not found")
+    else:
+        logger.info(f"Article '{post['title']}' retrieved!")
     return post
 
 # Define the Flask application
@@ -30,6 +41,11 @@ def index():
     connection.close()
     return render_template('index.html', posts=posts)
 
+
+@app.route('/healthz')
+def healthz():
+    return jsonify({"result": "OK - healthy"}), 200
+
 # Define how each individual article is rendered 
 # If the post ID is not found a 404 page is shown
 @app.route('/<int:post_id>')
@@ -43,7 +59,15 @@ def post(post_id):
 # Define the About Us page
 @app.route('/about')
 def about():
+    logger.info("About page retrieved!")
     return render_template('about.html')
+
+@app.route('/metrics')
+def metrics():
+    connection = get_db_connection()
+    post_count = connection.execute('SELECT COUNT(*) FROM posts').fetchone()[0]
+    connection.close()
+    return jsonify({ "db_connection_count": db_connection_count, "post_count": post_count }), 200
 
 # Define the post creation functionality 
 @app.route('/create', methods=('GET', 'POST'))
@@ -59,12 +83,13 @@ def create():
             connection.execute('INSERT INTO posts (title, content) VALUES (?, ?)',
                          (title, content))
             connection.commit()
+            logger.info(f"Article '{title}' created!")
             connection.close()
 
             return redirect(url_for('index'))
 
     return render_template('create.html')
 
-# start the application on port 3111
+# start the application on port 5000
 if __name__ == "__main__":
-   app.run(host='0.0.0.0', port='3111')
+   app.run(host='0.0.0.0', port='5000')
